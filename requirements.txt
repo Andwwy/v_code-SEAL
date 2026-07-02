@@ -1,0 +1,7 @@
+# v_code extraction deps. Use a RunPod PyTorch CUDA base image (torch preinstalled);
+# we do NOT pin torch here so we don't clobber the image's CUDA build.
+# Tested with transformers 5.12, datasets 5.0, torch 2.x.
+transformers>=5.0
+datasets>=4.0
+accelerate>=0.30
+huggingface_hub>=0.26
