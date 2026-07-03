@@ -1,10 +1,15 @@
-# v_code — porting SEAL's reasoning-steering to code
+# v_code — does a code-derived reasoning-steering vector generalize?
 
-**Goal:** reproduce SEAL's reasoning-efficiency steering on *code* tasks. SEAL builds a steering
-vector from the difference between "reflection / transition" thoughts and "execution" thoughts in a
-reasoning model, then subtracts it during decoding to cut redundant reasoning while preserving
-accuracy. This repo ports that to code with a **code-adapted thought taxonomy** and evaluates it on
-three benchmarks with `DeepSeek-R1-Distill-Qwen-1.5B`.
+**Thesis.** SEAL builds a reasoning-efficiency steering vector on **math** (MATH train), using keyword
+rules tuned for math reasoning, then subtracts it during decoding to cut redundant reasoning while
+holding accuracy. This project asks a different question: build the vector from a **code** task
+(MBPP), using the **same three SEAL thought-types** (execution / reflection / transition) but keyword
+rules **adapted for code**, and test whether that code-derived vector **generalizes** across domains.
+
+The method and the tags are SEAL's; only the *task* (code, not math) and the *keyword adaptation*
+change. We then apply the single code vector to three domains with `DeepSeek-R1-Distill-Qwen-1.5B` —
+**MBPP (code, in-domain)**, **GSM8K (math)**, **LogiQA (logic)** — where GSM8K and LogiQA test
+cross-domain **transfer**.
 
 ## Layout
 
@@ -34,19 +39,27 @@ three benchmarks with `DeepSeek-R1-Distill-Qwen-1.5B`.
 
 ## Results (n = 100 each, layer 20, coef −1.0)
 
-| benchmark | base | steered | Δacc | tokens |
-|---|---|---|---|---|
-| MBPP | 37% | 45% | **+8** | 2311 → 2048 (−11%) |
-| GSM8K | 64% | 67% | **+3** | 423 → 423 (−0%) |
-| LogiQA | 36% | 44% | **+8** | 1620 → 1276 (−21%) |
+| benchmark | domain | base | steered | Δacc | tokens |
+|---|---|---|---|---|---|
+| MBPP | code (in-domain) | 37% | 45% | **+8** | 2311 → 2048 (−11%) |
+| GSM8K | math (transfer) | 64% | 67% | **+3** | 423 → 423 (−0%) |
+| LogiQA | logic (transfer) | 36% | 44% | **+8** | 1620 → 1276 (−21%) |
 
-Steering shortens reasoning and slightly improves accuracy — the SEAL effect, at small scale.
-
-> **Read the deltas carefully.** These runs used `max_tokens = 3072` (SEAL production is 10000). On
-> MBPP/LogiQA the longer *baseline* is truncated more often, and a truncated trace never reaches its
-> answer (scored wrong) — this deflates the baseline and inflates the +8 deltas. GSM8K is the only
-> truncation-free benchmark (short traces) and shows **+3**, the honest estimate of the true effect.
-> Re-run at `max_tokens = 10000` for un-truncated numbers.
+> **⚠️ These numbers are from a buggy run — re-run before citing.** They were produced with a
+> **double-BOS** tokenization bug and `max_tokens = 3072` (SEAL uses single-BOS `--remove_bos` and
+> `max_tokens = 10000`). Both are now fixed in `eval/`, but `results/` predates the fix.
+> - **MBPP / LogiQA:** the longer *baseline* was truncated more than the steered run (a truncated
+>   trace never reaches its answer → scored wrong), which deflates the baseline and **inflates** the
+>   +8 deltas.
+> - **GSM8K was hit hardest.** The double-BOS prefix collapsed the model out of its reflective mode
+>   into a terse "First, I need to…" mode — baseline averaged **423 tokens with zero reflection** vs
+>   SEAL's faithful GSM8K baseline of **~2000 tokens**. With no reflection to suppress, steering did
+>   nothing (−0% tokens, +3 noise). This is the *most* corrupted result, not a clean control.
+>
+> **Faithful reference** — SEAL's *in-domain* run (math vector on GSM8K, `--remove_bos`, 10000 tok):
+> **73.8% → 81.2% (+7.4), 1997 → 1028 tokens (−49%)**. Our code vector is evaluated cross-domain, so
+> expect a *smaller* transfer effect — but re-running with the fixed harness should restore the
+> ~2000-token reflective baseline and a real (non-zero) effect. **Re-run all three; GSM8K first.**
 
 ## Reproduce
 
