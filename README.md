@@ -38,18 +38,10 @@ Changes vs SEAL original: promoted `wait`/`alternatively` from prefix-only → `
 
 ## Pipeline files
 - `thought_tags.py` — classifier + `\n\n`-boundary extraction (our keywords)
-- `extract_vector.py` — SEAL extraction on MBPP → `S = mean(execution) − mean(reflection∪transition)`; `--balance` labels each trace correct/incorrect (runs MBPP `test_list`) and builds a 50/50 pool to a target activation budget
 - `probe_*.py`, `lcb_hard_probe_colab.ipynb`, `analyze_tags.py` — the tests above
 
-## Run the extraction on RunPod
-Use a **PyTorch CUDA base image** + a `/workspace` volume. Upload this folder (or clone it), then:
-```bash
-cd /workspace/v_code
-cp .env.example .env          # optional: add HF_TOKEN
-bash setup_runpod.sh          # installs transformers/datasets/accelerate, sanity-checks GPU
-bash run_extract.sh           # balanced 50/50 extraction -> vectors/mbpp_v_code_steervec.pt
-```
-`run_extract.sh` defaults to `TARGET_ACTIVATIONS=10500` (≈1/10 of SEAL), `LAYER=20`, `MAX_TOKENS=3000`,
-scanning up to all 374 MBPP-`full` train tasks. Override via env, e.g. `TARGET_ACTIVATIONS=21000 bash run_extract.sh`.
-Output: `vectors/mbpp_v_code_steervec.pt` + `.meta.json` (pool sizes, pass rate, tag counts, norm); log in `extract_run.log`.
-Runtime ≈ 1.5–2 hr on an A100 (1.5B model, ~275 traces, HF generate — needed for hidden states).
+## Building the steering vector
+The `v_code` MBPP steering vector is built with **SEAL's own pipeline** (vLLM generation →
+HF forward pass → `vector_generation.py`), driven by the code-adapted keywords above — not a
+standalone script in this repo. This repo holds the keyword taxonomy + probing that the
+extraction consumes; the SEAL convention is `S = H_RT − H_E` (apply with `coef −1.0` in the eval).

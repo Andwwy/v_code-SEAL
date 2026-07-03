@@ -35,4 +35,4 @@ import thought_tags
 print(f"[setup] thought_tags OK — {len(thought_tags.REFLECT_WORDS)} reflect / "
       f"{len(thought_tags.TRANSITION_WORDS)} transition keywords")
 PY
-echo "[setup] done -> bash run_extract.sh"
+echo "[setup] done -> probe with: python probe_mbpp_thoughts.py"
