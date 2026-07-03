@@ -15,6 +15,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; cd "$DIR"
 : "${MAX_TOKENS:=10000}"
 : "${BATCH_SIZE:=16}"     # batched decode (the real speedup); A100-80GB handles 16 easily
 : "${BENCHMARKS:=mbpp gsm8k logiqa}"
+: "${OUT_DIR:=../results}"   # write to the repo-root results/ (tracked), not eval/results/
 
 echo "=================================================================="
 echo " 3-eval | vector=$VECTOR | n=$N coef=$COEF layer=$LAYER max_tokens=$MAX_TOKENS batch=$BATCH_SIZE"
@@ -22,6 +23,7 @@ echo " benchmarks=$BENCHMARKS"
 echo "=================================================================="
 
 python -u run_eval.py --vector "$VECTOR" --n "$N" --coef "$COEF" --layer "$LAYER" \
-    --max_tokens "$MAX_TOKENS" --batch_size "$BATCH_SIZE" --benchmarks $BENCHMARKS 2>&1 | tee eval_run.log
+    --max_tokens "$MAX_TOKENS" --batch_size "$BATCH_SIZE" --benchmarks $BENCHMARKS \
+    --out_dir "$OUT_DIR" 2>&1 | tee eval_run.log
 
-echo "== done: results/summary.json (+ per-benchmark json) =="
+echo "== done: $OUT_DIR/summary.json (+ per-benchmark json) =="
