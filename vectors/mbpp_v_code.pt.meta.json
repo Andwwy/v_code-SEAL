@@ -1,0 +1,13 @@
+{
+  "name": "mbpp_v_code",
+  "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+  "layer": 20,
+  "dim": 1536,
+  "norm": 51.0591,
+  "sign_convention": "H_RT - H_E  (SEAL convention: mean(reflection\u222atransition) - mean(execution))",
+  "apply_with": "coef = -1.0  (pushes toward execution / less reflection)",
+  "source_pipeline": "SEAL fork scripts/generate_vector_mbpp.sh: gen_mbpp_vllm.py (vLLM, --remove_bos) -> hidden_analysis.py (HF forward, layer 20) -> vector_generation.py",
+  "keywords": "code-adapted (extraction/thought_tags.py REFLECT_WORDS / TRANSITION_WORDS)",
+  "balance": "~120 traces/class (correct/incorrect), ~11k activations (~1/10 SEAL scale)",
+  "note": "Extracted on clean single-BOS activations. Apply in the eval with coef -1.0. This is NOT the sign that a naive mean(exec)-mean(refl) extractor would give."
+}

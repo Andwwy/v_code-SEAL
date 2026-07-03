@@ -1,47 +1,68 @@
-# v_code — porting SEAL's steering to code
+# v_code — porting SEAL's reasoning-steering to code
 
-Goal: build a code steering vector (`v_code`) the SEAL way. First we had to check
-whether R1-Distill's **code** reasoning decomposes into SEAL's three thought types
-(execution / reflection / transition) — and if the math keyword rules transfer.
+**Goal:** reproduce SEAL's reasoning-efficiency steering on *code* tasks. SEAL builds a steering
+vector from the difference between "reflection / transition" thoughts and "execution" thoughts in a
+reasoning model, then subtracts it during decoding to cut redundant reasoning while preserving
+accuracy. This repo ports that to code with a **code-adapted thought taxonomy** and evaluates it on
+three benchmarks with `DeepSeek-R1-Distill-Qwen-1.5B`.
 
-## How we tested it
-Ran R1-Distill-Qwen-1.5B on a few problems, split each reasoning trace on `\n\n`,
-classified every thought with SEAL's **original** keywords, and eyeballed the labels:
-- **5 MBPP** problems — `probe_mbpp_thoughts.py`
-- **5 hard LiveCodeBench** problems — `probe_lcb_thoughts.py` (and `lcb_hard_probe_colab.ipynb` for Colab)
-- tag counts + missed-cue analysis — `analyze_tags.py`
+## Layout
 
-## What we found
-| Dataset | execution | reflection | transition |
-|---|---|---|---|
-| MBPP (5) | 123 | 23 | **0** |
-| LiveCodeBench hard (3, partial) | 253 | 170 | **16** |
-
-- **All 3 tags map to code** — but transition only shows up on **hard** problems (MBPP is too easy → the model rechecks rather than switches strategy).
-- SEAL's **prefix-only** rule for `Wait`/`Alternatively` **undercounts** on code: reflection/switching happens *mid-thought* ("…but wait", "…alternatively"), landing in execution.
-- Noise to avoid: bare `another` ("another test case" = execution) and `perhaps` (ubiquitous hedging).
-
-## Decision: keyword lists we use (code-adapted, all `contains`, case-insensitive)
-Reflection is checked before transition; anything matching neither = execution. Source of truth: `thought_tags.py`.
-
-| Tag | Keywords |
+| dir | what |
 |---|---|
-| **Reflection** | `wait`, `but wait`, `verify`, `make sure`, `hold on`, `think again`, `'s correct`, `'s incorrect`, `let me check`, `seems right`, `hmm`, `what if`, `double-check`, `recheck`, `edge case` |
-| **Transition** | `alternatively`, `another way`, `another approach`, `another method`, `another solution`, `another strategy`, `another technique`, `think differently`, `instead`, `a better way`, `rethink`, `start over`, `on second thought` |
-| **Execution** | — (default) |
+| `extraction/` | the code-adapted thought taxonomy (`thought_tags.py`) + probes/evidence that justify it |
+| `vectors/` | the shipped steering vector `mbpp_v_code.pt` (+ `.meta.json` provenance) |
+| `eval/` | 3-benchmark steering eval (MBPP / GSM8K / LogiQA) — `run_eval.py`, `steering.py`, `benchmarks.py` |
+| `results/` | eval outputs — per-task correctness + token counts (`<bench>.json`) and `summary.json` |
 
-Changes vs SEAL original: promoted `wait`/`alternatively` from prefix-only → `contains`; fixed the dead `think differenly` typo; added code cues (`but wait`, `hmm`, `what if`, `double-check`, `recheck`, `edge case`, `instead`, …). `hmm`/`edge case`/`instead` are still provisional pending the full LiveCodeBench traces.
+## Pipeline
 
-## Evidence
-- `evidence/mbpp_probe_traces.jsonl` — 5 MBPP traces, full text
-- `evidence/lcb_hard_partial.json` — 3 hard LiveCodeBench traces (salvaged from the interrupted run; thoughts truncated to 180 chars)
+1. **Taxonomy** (`extraction/`) — split each reasoning trace on `\n\n` and classify every thought as
+   execution / reflection / transition using **code-adapted** keyword lists (promoted `wait` /
+   `alternatively` from prefix-only → `contains`, added code cues like `edge case`, `double-check`;
+   see `extraction/README.md`). This is the part that makes it a *code* steering vector rather than a
+   math one.
+2. **Vector** (`vectors/mbpp_v_code.pt`) — built with **SEAL's own pipeline** (fork script
+   `scripts/generate_vector_mbpp.sh`: `gen_mbpp_vllm.py` vLLM generation → `hidden_analysis.py` HF
+   forward pass → `vector_generation.py`), driven by the taxonomy above. Convention
+   **`S = H_RT − H_E`** (reflection∪transition − execution), layer 20, ~120 traces/class
+   (~1/10 SEAL scale), extracted on clean single-BOS activations. Provenance in
+   `vectors/mbpp_v_code.pt.meta.json`.
+3. **Steering eval** (`eval/`) — add `coef · S` to the layer-20 residual at each `\n\n` inside the
+   `<think>` block. With `S = H_RT − H_E`, **`coef = −1.0`** pushes toward execution (less reflection).
+   Batched greedy decode, baseline vs steered, scored per benchmark.
 
-## Pipeline files
-- `thought_tags.py` — classifier + `\n\n`-boundary extraction (our keywords)
-- `probe_*.py`, `lcb_hard_probe_colab.ipynb`, `analyze_tags.py` — the tests above
+## Results (n = 100 each, layer 20, coef −1.0)
 
-## Building the steering vector
-The `v_code` MBPP steering vector is built with **SEAL's own pipeline** (vLLM generation →
-HF forward pass → `vector_generation.py`), driven by the code-adapted keywords above — not a
-standalone script in this repo. This repo holds the keyword taxonomy + probing that the
-extraction consumes; the SEAL convention is `S = H_RT − H_E` (apply with `coef −1.0` in the eval).
+| benchmark | base | steered | Δacc | tokens |
+|---|---|---|---|---|
+| MBPP | 37% | 45% | **+8** | 2311 → 2048 (−11%) |
+| GSM8K | 64% | 67% | **+3** | 423 → 423 (−0%) |
+| LogiQA | 36% | 44% | **+8** | 1620 → 1276 (−21%) |
+
+Steering shortens reasoning and slightly improves accuracy — the SEAL effect, at small scale.
+
+> **Read the deltas carefully.** These runs used `max_tokens = 3072` (SEAL production is 10000). On
+> MBPP/LogiQA the longer *baseline* is truncated more often, and a truncated trace never reaches its
+> answer (scored wrong) — this deflates the baseline and inflates the +8 deltas. GSM8K is the only
+> truncation-free benchmark (short traces) and shows **+3**, the honest estimate of the true effect.
+> Re-run at `max_tokens = 10000` for un-truncated numbers.
+
+## Reproduce
+
+**Eval** (needs the vector; runs in the SEAL env, HF only — no vLLM):
+
+```bash
+cd eval
+VECTOR=../vectors/mbpp_v_code.pt bash run_eval.sh    # coef -1.0, layer 20, MBPP/GSM8K/LogiQA, n=100
+```
+
+**Vector** (built with the SEAL fork, not this repo): `scripts/generate_vector_mbpp.sh` in the SEAL
+fork runs `gen_mbpp_vllm.py --remove_bos → hidden_analysis.py → vector_generation.py`, using the
+keyword lists in `extraction/thought_tags.py`.
+
+## Convention — don't flip the sign
+
+`vectors/mbpp_v_code.pt` is **`S = H_RT − H_E`**; apply with **`coef −1.0`**. A `mean(execution) −
+mean(reflection)` vector would be the *opposite* sign and would steer backward at `coef −1.0`. The
+convention is recorded in `vectors/mbpp_v_code.pt.meta.json`; `eval/` defaults to `coef −1.0`.

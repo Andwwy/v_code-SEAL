@@ -1,6 +1,6 @@
 .venv/
 __pycache__/
-vectors/
+vectors/*.ckpt
 *.log
 .env
 .DS_Store
