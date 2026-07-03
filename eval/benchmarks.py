@@ -1,7 +1,7 @@
 """Three benchmarks for the eval: MBPP (pass@1), GSM8K (numeric accuracy),
 LogiQA 2.0 (multiple-choice accuracy). Each exposes load/prompt/score with the same
 signature so run_eval.py can loop over them."""
-import json, re, subprocess, sys
+import json, random, re, subprocess, sys
 
 
 def chat(tok, instr):
@@ -83,11 +83,16 @@ def score_mbpp(gen, ex, timeout=6):
 
 
 # ----------------------------- GSM8K -----------------------------
-def load_gsm8k(n):
+def load_gsm8k(n, seed=0):
     from datasets import load_dataset
     ds = load_dataset("openai/gsm8k", "main", split="test")
+    # RANDOM sample of n (not the first n) so the tasks aren't biased by dataset order.
+    # Seeded => reproducible, and it's loaded ONCE in run_eval and reused for BOTH the
+    # baseline and steered passes, so both conditions score the exact same tasks.
+    idx = list(range(len(ds)))
+    random.Random(seed).shuffle(idx)
     out = []
-    for r in ds.select(range(min(n, len(ds)))):
+    for r in ds.select(sorted(idx[:min(n, len(ds))])):
         out.append({"problem": r["question"], "gt": r["answer"].split("####")[1].strip().replace(",", "")})
     return out
 
