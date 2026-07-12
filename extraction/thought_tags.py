@@ -1,29 +1,72 @@
-"""v_code thought classifier — code-adapted keyword lists (all 'contains' matching,
-per the evidence analysis in evidence/) + boundary extraction for steering-vector
-building. Keep this as the single source of truth for the tags.
+"""v_code thought classifier — keyword lists + boundary extraction for
+steering-vector building. Single source of truth for the tags.
+
+Two keyword sets, selected by the `keyword_set` pointer (same pattern as the
+`train` pointer in train_registry.py):
+
+  code      : the v1 code-adapted lists (all 'contains' matching, per the
+              evidence analysis in the v1 repo) — wait/alternatively promoted
+              from prefix->contains, upstream's "differenly" typo fixed, code
+              cues added. THE DEFAULT, per PLAN.md.
+  seal_math : VITA-Group/SEAL's original MATH lists VERBATIM (including the
+              "think differenly" typo and the Wait/Alternatively PREFIX
+              matching) — flip the pointer for upstream-exact tagging.
+
+This is the ONE semantic deviation from upstream beyond the dataset/scorer;
+everything around it (boundary discovery, think-region slicing, tag priority)
+is executable-verified identical to upstream hidden_analysis.generate_index.
 """
 import re
 
-# --- code-adapted keyword lists (ours) ---
-REFLECT_WORDS = [
-    "wait", "but wait", "verify", "make sure", "hold on", "think again",
-    "'s correct", "'s incorrect", "let me check", "seems right", "hmm",
-    "what if", "double-check", "recheck", "edge case",
-]
-TRANSITION_WORDS = [
-    "alternatively", "another way", "another approach", "another method",
-    "another solution", "another strategy", "another technique",
-    "think differently", "instead", "a better way", "rethink",
-    "start over", "on second thought",
-]
+KEYWORD_SETS = {
+    "code": {
+        "reflect_words": [
+            "wait", "but wait", "verify", "make sure", "hold on", "think again",
+            "'s correct", "'s incorrect", "let me check", "seems right", "hmm",
+            "what if", "double-check", "recheck", "edge case",
+        ],
+        "reflect_prefixes": [],
+        "transition_words": [
+            "alternatively", "another way", "another approach", "another method",
+            "another solution", "another strategy", "another technique",
+            "think differently", "instead", "a better way", "rethink",
+            "start over", "on second thought",
+        ],
+        "transition_prefixes": [],
+    },
+    "seal_math": {  # upstream VITA-Group/SEAL hidden_analysis.py, verbatim
+        "reflect_words": [
+            "verify", "make sure", "hold on", "think again",
+            "'s correct", "'s incorrect", "Let me check", "seems right",
+        ],
+        "reflect_prefixes": ["Wait"],
+        "transition_words": [
+            "think differenly", "another way", "another approach",
+            "another method", "another solution", "another strategy",
+            "another technique",
+        ],
+        "transition_prefixes": ["Alternatively"],
+    },
+}
+
+# POINTER — the active keyword set (matching is case-insensitive either way).
+keyword_set = "code"
+
+REFLECT_WORDS = KEYWORD_SETS[keyword_set]["reflect_words"]
+REFLECT_PREFIXES = KEYWORD_SETS[keyword_set]["reflect_prefixes"]
+TRANSITION_WORDS = KEYWORD_SETS[keyword_set]["transition_words"]
+TRANSITION_PREFIXES = KEYWORD_SETS[keyword_set]["transition_prefixes"]
 
 
 def classify(step_text):
-    """execution / reflection / transition — reflection checked first."""
+    """execution / reflection / transition — reflection checked first
+    (same priority as upstream generate_index)."""
     s = step_text.strip().lower()
-    if any(w in s for w in REFLECT_WORDS):
+    if any(s.startswith(p.lower()) for p in REFLECT_PREFIXES) or \
+       any(w.lower() in s for w in REFLECT_WORDS):
         return "reflection"
-    if any(w in s for w in TRANSITION_WORDS):
+    if any(s.startswith(p.lower()) for p in TRANSITION_PREFIXES) or \
+       any(w.lower() in s for w in TRANSITION_WORDS):
         return "transition"
     return "execution"
 

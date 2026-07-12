@@ -12,7 +12,8 @@ gpu=${1:-0}
 : "${CHUNK:=250}"                # problems per vLLM generate+score round
 : "${TIMEOUT:=10}"               # seconds per test case
 : "${MAX_TESTS:=0}"              # 0 = run every test case (logged if capped)
-: "${BATCH_SIZE:=4}"             # hidden_analysis forward batch (10k traces, 24GB)
+: "${DTYPE:=float32}"            # float32 = upstream-exact numerics; bfloat16 = 2x faster
+: "${BATCH_SIZE:=2}"             # hidden_analysis forward batch (10k traces, 24GB, fp32)
 : "${KEEP_LAYERS:=}"             # empty = all layers (~9GB, faithful); "20" if disk-tight
 : "${LAYER:=20}"                 # steering layer (SEAL)
 : "${EVAL_N:=300}"               # random eval task list: total problems (difficulty random)
@@ -43,12 +44,12 @@ KL=()
 echo "[2/6] hidden states — incorrect (first $TARGET) ..."
 CUDA_VISIBLE_DEVICES=$gpu python -u extraction/hidden_analysis.py \
     --model_path "$MODEL" --data_path "$DIR/data.jsonl" --data_dir "$DIR" \
-    --type incorrect --start 0 --sample "$TARGET" --batch_size "$BATCH_SIZE" "${KL[@]}"
+    --type incorrect --start 0 --sample "$TARGET" --batch_size "$BATCH_SIZE" --dtype "$DTYPE" "${KL[@]}"
 
 echo "[3/6] hidden states — correct (first $TARGET) ..."
 CUDA_VISIBLE_DEVICES=$gpu python -u extraction/hidden_analysis.py \
     --model_path "$MODEL" --data_path "$DIR/data.jsonl" --data_dir "$DIR" \
-    --type correct --start 0 --sample "$TARGET" --batch_size "$BATCH_SIZE" "${KL[@]}"
+    --type correct --start 0 --sample "$TARGET" --batch_size "$BATCH_SIZE" --dtype "$DTYPE" "${KL[@]}"
 
 echo "[4/6] build steering vector (layer $LAYER) ..."
 # --overwrite: stages 2/3 recompute hidden.pt on every run, so a re-run must

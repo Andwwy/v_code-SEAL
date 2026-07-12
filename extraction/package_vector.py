@@ -14,13 +14,24 @@ import shutil
 
 import torch
 
-from thought_tags import REFLECT_WORDS, TRANSITION_WORDS
+import thought_tags
+from thought_tags import (REFLECT_WORDS, REFLECT_PREFIXES,
+                          TRANSITION_WORDS, TRANSITION_PREFIXES)
 
 
 def load_selection(data_dir, prefix):
     path = os.path.join(data_dir, f"hidden_{prefix}", "selection.json")
     with open(path) as f:
-        return json.load(f)
+        sel = json.load(f)
+    # extraction-time provenance must match the pointer NOW, else this meta
+    # would describe lists/dtype that did not produce the vector
+    if sel["keyword_set"] != thought_tags.keyword_set:
+        raise SystemExit(
+            f"[package] {prefix}: extracted with keyword_set="
+            f"'{sel['keyword_set']}' but thought_tags.keyword_set is now "
+            f"'{thought_tags.keyword_set}' — re-run hidden_analysis or flip "
+            "the pointer back before packaging.")
+    return sel
 
 
 def main():
@@ -42,16 +53,19 @@ def main():
 
     pools = {}
     n_rt, n_steps = 0, 0
+    extraction_dtype = None
     for prefix in args.prefixs:
         sel = load_selection(args.data_dir, prefix)
-        pool_rt = sum(s["n_check"] + s["n_switch"] for s in sel)
-        pool_steps = sum(s["n_steps"] for s in sel)
+        extraction_dtype = sel.get("dtype", extraction_dtype)
+        items = sel["items"]
+        pool_rt = sum(s["n_check"] + s["n_switch"] for s in items)
+        pool_steps = sum(s["n_steps"] for s in items)
         n_rt += pool_rt
         n_steps += pool_steps
         pools[prefix] = {
-            "n_traces": len(sel),
-            "problem_ids": [s["problem_id"] for s in sel],
-            "difficulty_counts": _count(s["difficulty"] for s in sel),
+            "n_traces": len(items),
+            "problem_ids": [s["problem_id"] for s in items],
+            "difficulty_counts": _count(s["difficulty"] for s in items),
             "n_activations_total": pool_steps,
             "n_activations_reflection_transition": pool_rt,
         }
@@ -65,6 +79,7 @@ def main():
         "dataset": "codeparrot/apps (parquet branch)",
         "split": gen_config["split"],
         "layer": args.layer,
+        "extraction_dtype": extraction_dtype,
         "sign_convention": ("vector = mean(H_reflection ∪ H_transition) − mean(H_execution); "
                             "apply by ADDING coef * vector with coef = -1.0 "
                             "(SEAL code convention, opposite of the paper's formula)"),
@@ -74,9 +89,11 @@ def main():
                               if "deepseek" in gen_config["model_name_or_path"].lower()
                               else " — WARNING: whole sequence (non-deepseek model, "
                                    "hidden_analysis think_only=False)")),
-        "keyword_lists": {"version": "v_code-1 (code-adapted, all-contains)",
+        "keyword_lists": {"set": thought_tags.keyword_set,
                           "reflection": REFLECT_WORDS,
+                          "reflection_prefixes": REFLECT_PREFIXES,
                           "transition": TRANSITION_WORDS,
+                          "transition_prefixes": TRANSITION_PREFIXES,
                           "priority": "reflection checked before transition"},
         "selection_rule": (("train split in file order, greedy n=1; first "
                             f"{gen_config['target']} correct + first "

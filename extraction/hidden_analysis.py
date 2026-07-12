@@ -27,7 +27,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm import tqdm
 import argparse
 
-from thought_tags import REFLECT_WORDS, TRANSITION_WORDS
+import thought_tags
+from thought_tags import (REFLECT_WORDS, REFLECT_PREFIXES,
+                          TRANSITION_WORDS, TRANSITION_PREFIXES)
 
 
 def generate_math_data(data_dir, data_path):
@@ -60,12 +62,14 @@ def generate_math_data(data_dir, data_path):
 
 
 def generate_index(text, tokenizer, split_id, think_only=True):
-    # SEAL's generate_index with the v_code code-adapted keyword lists
-    # (all "contains" matching; variable names kept from SEAL).
+    # SEAL's generate_index; keyword lists/prefixes come from the keyword_set
+    # pointer in thought_tags.py (default: v_code code-adapted, all-contains;
+    # flip to seal_math for upstream's exact lists incl. Wait/Alternatively
+    # prefixes). Variable names kept from SEAL.
     check_words = REFLECT_WORDS
-    check_prefix = []
+    check_prefix = REFLECT_PREFIXES
     swicth_words = TRANSITION_WORDS
-    switch_prefix = []
+    switch_prefix = TRANSITION_PREFIXES
 
     tokens = tokenizer.encode(text)
     if think_only:
@@ -100,9 +104,19 @@ def generate_index(text, tokenizer, split_id, think_only=True):
     return step_index, check_index, switch_index
 
 
-def generate(model_path, data, save_dir, keep_layers=None, batch_size=8):
+def generate(model_path, data, save_dir, keep_layers=None, batch_size=4,
+             dtype="float32"):
     think_only = "deepseek" in model_path.lower()
-    model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype=torch.bfloat16)
+    # UPSTREAM default is fp32 (no torch_dtype passed); bfloat16 is an opt-in
+    # speed/memory mode that perturbs hidden values at floating-point-noise level
+    torch_dtype = {"float32": torch.float32, "bfloat16": torch.bfloat16,
+                   "float16": torch.float16}[dtype]
+    model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype=torch_dtype)
+    # transformers v5 deprecated torch_dtype= and changed the no-dtype default
+    # to checkpoint dtype (bf16 for this model) — fail loud if a future version
+    # silently ignores the kwarg instead of drifting numerics
+    loaded = next(model.parameters()).dtype
+    assert loaded == torch_dtype, f"requested {torch_dtype} but model loaded as {loaded}"
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     tokenizer.padding_side = "left"
     # set pad token to eos token if pad token is not set (as is the case for llama models)
@@ -167,7 +181,11 @@ def generate(model_path, data, save_dir, keep_layers=None, batch_size=8):
     os.makedirs(save_dir, exist_ok=True)
     torch.save(hidden_dict, f"{save_dir}/hidden.pt")
     json.dump(prompts, open(f"{save_dir}/prompts.json", "w"))
-    json.dump(selection, open(f"{save_dir}/selection.json", "w"), indent=2)
+    # keyword_set/dtype recorded at EXTRACTION time so packaging can verify the
+    # pointer wasn't flipped mid-pipeline (meta must describe what actually ran)
+    json.dump({"keyword_set": thought_tags.keyword_set, "dtype": dtype,
+               "items": selection},
+              open(f"{save_dir}/selection.json", "w"), indent=2)
 
 
 if __name__ == "__main__":
@@ -184,7 +202,12 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=4,
                         help="Forward-pass batch size (left-padded). Results match "
                              "batch_size=1 up to floating-point error. With 10k-token "
-                             "traces on 24GB, 4 is safe (logits are trimmed).")
+                             "traces on 24GB: fp32 -> 2, bf16 -> 4 (logits are trimmed).")
+    parser.add_argument("--dtype", type=str, default="float32",
+                        choices=["float32", "bfloat16", "float16"],
+                        help="float32 = UPSTREAM-exact numerics (SEAL passes no "
+                             "torch_dtype); bfloat16 halves memory/time at "
+                             "noise-level hidden-state differences.")
     args = parser.parse_args()
     correct, incorrect = generate_math_data(data_dir=args.data_dir, data_path=args.data_path)
     if args.type == "correct":
@@ -200,5 +223,6 @@ if __name__ == "__main__":
         else:
             save_dir = f"{save_dir}_{args.start}_-1"
     print(save_dir)
-    print(f"[hidden] {args.type}: {len(data)} traces")
-    generate(args.model_path, data, save_dir, keep_layers=args.keep_layers, batch_size=args.batch_size)
+    print(f"[hidden] {args.type}: {len(data)} traces (dtype={args.dtype})")
+    generate(args.model_path, data, save_dir, keep_layers=args.keep_layers,
+             batch_size=args.batch_size, dtype=args.dtype)

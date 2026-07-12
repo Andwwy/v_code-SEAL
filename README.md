@@ -87,12 +87,31 @@ refuses a changed pointer. Test cases are not embedded in `train_code.jsonl`
 | vector | layer 20, `mean(refl∪trans) − mean(exec)` | `vector_generation.py` (verbatim) |
 | sign | vector = `H_RT − H_E` → **apply with coef −1.0** | code convention, opposite of the paper's formula |
 
-Deviations (all mechanical, none affect the math): APPS test-runner replaces
-the MATH answer-checker, with grading semantics matching SEAL's own
-`code_evaluation/testing_util.py` (audited — see below); problems with
-missing/broken tests are filtered and logged (`skipped.jsonl`); batched
-forward passes + optional layer subsetting + logits trimming in Stage 3
-(bit-identical hidden states, just memory/disk).
+Deviations from upstream, the complete list:
+
+1. **Dataset + scorer** (the point of the project): APPS train via the
+   `train_code` pointer; test-based scoring with semantics matching SEAL's own
+   `code_evaluation/testing_util.py`; problems with missing/broken tests
+   filtered and logged (`skipped.jsonl`) — a test-based scorer cannot label
+   them. Skipping never reorders the remainder.
+2. **Keyword lists**: code-adapted by default (`keyword_set = "code"` in
+   `thought_tags.py`); flip to `"seal_math"` for upstream's verbatim lists
+   (incl. the `Wait`/`Alternatively` prefixes and the `"think differenly"`
+   typo) — verified to reproduce upstream tagging exactly.
+3. **Prompt-length handling** (forced by APPS, absent upstream): upstream's
+   `max_model_len = max_tokens + 2000` assumed MATH-sized prompts (its own
+   data never hit the cap). APPS has 6/4,450 usable prompts over 2,000 tokens
+   (one is 13,644 tokens — the verbatim formula would *crash* on it). We give
+   every prompt ≤ 4,096 tokens the full 10,000-token generation budget
+   (`max_model_len = 10000 + 4096 + 16`) and skip longer ones (logged). Under
+   the upstream formula those 6 problems would get truncated budgets instead.
+4. **Mechanical only** (proven not to change results — see validation):
+   batched left-padded forwards with pad-aware position_ids, `--dtype`
+   (default float32 = upstream-era numerics), `--keep_layers`, logits trimmed
+   to the last position, chunked generation with early stop (≡ prefix
+   selection), resume/repair, TP=1, `trim_output` applied exactly as upstream
+   (generations truncated at upstream's three markers before scoring and
+   extraction).
 
 ## Outputs
 
@@ -136,6 +155,37 @@ forward passes + optional layer subsetting + logits trimming in Stage 3
   1-element-list-wrapped, per the original Hendrycks harness), list-of-lines
   stdin inputs, non-UTF-8 output, programs that `sys.exit(1)` after printing
   (SystemExit swallowed, like the reference).
+
+## Executable validation against upstream VITA-Group/SEAL (2026-07-12)
+
+A fresh clone of https://github.com/VITA-Group/SEAL (not the locally-modified
+fork) was compared and *executed* against this pipeline:
+
+- **Vector calculation**: upstream `vector_generation.py` and ours produce
+  **bitwise-identical** steering vectors on identical synthetic 29-layer
+  pools (layer 20, irregular pools incl. empty reflection/transition sets),
+  and both match the hand-computed
+  `mean(H_reflection ∪ H_transition) − mean(H_execution)`. Apply with
+  coef −1.0, per upstream `steering.sh`.
+- **Hidden states**: with the real DeepSeek-R1-Distill-Qwen-1.5B (fp32, CPU),
+  our pipeline reproduces upstream's per-trace hidden states **bitwise at
+  batch_size=1** across all 29 layers; batch_size=2 differs by ~1.8e-6
+  relative (GEMM reduction-order noise). Skeptic agents additionally verified
+  the left-padded position_ids recipe ≡ unpadded forwards at 2e-17 in fp64
+  and no attention leak across pad positions.
+- **Boundary discovery + tagging**: `generate_index` machinery byte-identical
+  in outputs given the same lists (real tokenizer, 7 edge-case traces, both
+  think_only modes); step boundaries never differ; `keyword_set="seal_math"`
+  reproduces upstream tagging verbatim.
+- **Recipe**: greedy n=1 / temp 0 / max_tokens 10000 / single BOS / file
+  order / `--start 0 --sample 500` prefix / `hidden_{type}_0_500` naming /
+  stage arguments — all verified equal to upstream `generate_vector.sh` +
+  `eval_MATH_vllm.py`; upstream's `trim_output` is applied verbatim.
+- **transformers-v5 gotcha found during validation**: under transformers 5.x,
+  `from_pretrained` without a dtype loads the checkpoint dtype (bf16) — so
+  upstream's own script re-run today would silently change numerics. Our
+  explicit `--dtype float32` (plus a post-load dtype assert) pins the
+  published SEAL-era behavior.
 
 ## Adversarial fidelity audit (2026-07-11)
 

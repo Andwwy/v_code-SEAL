@@ -74,6 +74,23 @@ def repair_outputs(eval_path, data_path):
     return ev[:k]
 
 
+def trim_output(output):
+    # UPSTREAM eval_MATH_vllm.trim_output VERBATIM: SEAL truncates every
+    # generation at these markers BEFORE math_eval.jsonl, so the trimmed text
+    # is what gets scored AND what enters hidden-state extraction. Dropping it
+    # would be a semantic deviation (1/5000 APPS questions even contains a
+    # literal 'Comment:').
+    instruction_prefix = "Answer the following question"
+    question_prefix = 'Question:'
+    comment_prefix = 'Comment:'
+
+    for prefix in [instruction_prefix, question_prefix, comment_prefix]:
+        if prefix in output:
+            output = output.split(prefix)[0]
+
+    return output
+
+
 def build_prompts(rows, tests_list, tokenizer, remove_bos=True):
     prompts = []
     for row, tests in zip(rows, tests_list):
@@ -244,7 +261,7 @@ def main():
             example_prompt_saved = True
 
         outputs = llm.generate(prompts=prompts, sampling_params=sampling)  # keeps order
-        gens = [o.outputs[0].text for o in outputs]
+        gens = [trim_output(o.outputs[0].text) for o in outputs]
         results = apps_scoring.score_many(gens, tests_list, timeout=args.timeout,
                                           max_tests=args.max_tests,
                                           workers=args.workers)
