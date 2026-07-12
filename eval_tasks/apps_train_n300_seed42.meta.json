@@ -1,0 +1,19 @@
+{
+  "dataset": "codeparrot/apps (parquet branch)",
+  "split": "train",
+  "seed": 42,
+  "n_total_requested": 300,
+  "method": "filter problems with missing/broken tests, exclude extraction-used problem_ids if --exclude_from given, random.Random(seed).sample over the WHOLE remaining pool (difficulty random, not stratified), order by problem_id",
+  "n_rows": 300,
+  "difficulty_counts_realized": {
+    "introductory": 145,
+    "interview": 117,
+    "competition": 38
+  },
+  "pool_usable": 4450,
+  "n_filtered_no_tests": 550,
+  "excluded": {
+    "source": null,
+    "n_excluded": 0
+  }
+}

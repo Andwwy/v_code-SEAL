@@ -15,7 +15,7 @@ gpu=${1:-0}
 : "${BATCH_SIZE:=4}"             # hidden_analysis forward batch (10k traces, 24GB)
 : "${KEEP_LAYERS:=}"             # empty = all layers (~9GB, faithful); "20" if disk-tight
 : "${LAYER:=20}"                 # steering layer (SEAL)
-: "${EVAL_PER_TIER:=100}"        # random eval task list: problems per difficulty tier
+: "${EVAL_N:=300}"               # random eval task list: total problems (difficulty random)
 : "${EVAL_SEED:=42}"             # seed for the eval task sample
 TAG=$(basename "$MODEL")
 DIR="results/APPS_train/${TAG}/baseline_${MAX_TOKENS}"
@@ -56,8 +56,11 @@ python -u extraction/package_vector.py \
 echo "== done: vectors/apps_v_code.pt + vectors/apps_v_code.meta.json =="
 echo "   (SEAL convention: vector = H_RT - H_E; apply with coef -1.0 in the eval)"
 
-echo "[6/6] random eval task list (APPS test, seeded) ..."
+echo "[6/6] random eval task list (APPS train, random difficulty, seeded) ..."
+# --exclude_from: generation is done, so sample only from train problems the
+# extraction never consumed (the v1 lesson: never eval on the extraction data)
 python -u extraction/make_eval_list.py \
-    --split test --per_difficulty "$EVAL_PER_TIER" --seed "$EVAL_SEED"
+    --split train --n_total "$EVAL_N" --seed "$EVAL_SEED" \
+    --exclude_from "$DIR/math_eval.jsonl"
 
-echo "== eval list: eval_tasks/apps_test_n${EVAL_PER_TIER}_seed${EVAL_SEED}.jsonl =="
+echo "== eval list: eval_tasks/apps_train_n${EVAL_N}_seed${EVAL_SEED}_excl.jsonl =="

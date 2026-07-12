@@ -17,16 +17,22 @@ hidden_analysis.py    Stage 3    SEAL's hidden_analysis, APPS-adapted: \n\n ("Ċ
                                  thought_tags.py keyword lists
 vector_generation.py  Stage 4    SEAL VERBATIM: layer 20, S = H_RT − H_E
 package_vector.py     Stage 4b   vectors/apps_v_code.pt + full-provenance meta.json
-make_eval_list.py     Stage 4c   seeded-RANDOM eval task list from APPS *test*
-                                 (100/difficulty tier, jsonl + meta) — fixed once
-                                 here so every eval run scores the same problems
+make_eval_list.py     Stage 4c   seeded-RANDOM eval task list from APPS *train*,
+                                 difficulty random (NOT stratified; jsonl + meta)
+                                 — fixed once so every eval run scores the same
+                                 problems
 run_extraction.sh                orchestrates all of the above
 ```
 
 Selection design, explicitly: **extraction pools are greedy first-filled**
 (first 500 correct + first 500 incorrect over train in file order — SEAL's
 `--start 0 --sample 500`, deterministic, never random); the **eval task list
-is seeded-random** (stratified sample of the disjoint test split).
+is seeded-random from the same train split, difficulty random** (uniform over
+the usable pool, so the realized mix follows the pool). Because extraction
+consumes a file-order prefix of train, the orchestrator regenerates the list
+after generation with `--exclude_from` so eval never scores a problem whose
+trace built the vector (the v1 lesson); the frozen no-exclusion list ships in
+`eval_tasks/` and overlap is always quantifiable from recorded problem_ids.
 
 Run on a GPU pod (24GB is enough; 1.5B model):
 
@@ -65,8 +71,11 @@ forward passes + optional layer subsetting + logits trimming in Stage 3
 - `vectors/apps_v_code.pt` + `vectors/apps_v_code.meta.json` — the vector and
   its provenance (model, layer, sign, keyword lists, split + problem ids,
   activation counts, full gen config)
-- `eval_tasks/apps_test_n100_seed42.jsonl` + `.meta.json` — the frozen random
-  eval task list (seed, per-tier counts, and filter stats recorded in the meta)
+- `eval_tasks/apps_train_n300_seed42.jsonl` + `.meta.json` — the frozen random
+  eval task list (train split, difficulty random; seed, realized difficulty
+  mix, and filter/exclusion stats recorded in the meta). The pipeline run adds
+  `apps_train_n300_seed42_excl.jsonl`, the same sampling with extraction-used
+  problems excluded.
 
 ## Measured on real APPS train data (local validation, 2026-07-11)
 
@@ -75,9 +84,11 @@ forward passes + optional layer subsetting + logits trimming in Stage 3
   plan table exactly. Kind split: **2,714 call-based / 1,736 stdio** (61% of
   train is LeetCode-style `fn_name` — both kinds are handled).
 - Tests/problem: mean 5.8, median 3, max 1440.
-- Test split: all 5,000 problems have usable tests (the missing-tests defect is
-  train-only); the frozen eval list samples 100/1000 introductory, 100/3000
-  interview, 100/1000 competition, deterministic across runs (seed 42).
+- Frozen eval list (train, seed 42, n=300, difficulty random): realized mix
+  145 introductory / 117 interview / 38 competition — proportional to the
+  4,450-problem usable pool; deterministic across runs. (For reference, the
+  test split has all 5,000 problems with usable tests — the missing-tests
+  defect is train-only.)
 - Harness vs ground-truth solutions (first py3-parseable solution per problem,
   100 per kind): **stdio 87/100, call-based 100/100**. All 13 stdio failures
   are inherent to exact grading and fail identically under SEAL's own
