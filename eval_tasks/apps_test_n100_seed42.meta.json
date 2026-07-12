@@ -1,0 +1,28 @@
+{
+  "dataset": "codeparrot/apps (parquet branch)",
+  "split": "test",
+  "seed": 42,
+  "per_difficulty": 100,
+  "method": "filter problems with missing/broken tests, group by difficulty, random.Random(seed).sample per tier, order by tier then problem_id",
+  "counts": {
+    "introductory": {
+      "usable": 1000,
+      "sampled": 100
+    },
+    "interview": {
+      "usable": 3000,
+      "sampled": 100
+    },
+    "competition": {
+      "usable": 1000,
+      "sampled": 100
+    }
+  },
+  "n_rows": 300,
+  "n_filtered_no_tests": 0,
+  "tier_order": [
+    "introductory",
+    "interview",
+    "competition"
+  ]
+}

@@ -1,10 +1,4 @@
-.venv/
 __pycache__/
-vectors/*.ckpt
-*.log
-.env
+*.pyc
+results/
 .DS_Store
-*.png
-mbpp_test_traces.jsonl
-mbpp_extract_traces.jsonl
-mbpp_probe_traces.jsonl

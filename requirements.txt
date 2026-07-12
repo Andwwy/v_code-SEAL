@@ -1,0 +1,7 @@
+# extraction pipeline (GPU pod). Same env as SEAL v1 runs.
+vllm>=0.6.0
+transformers>=4.44.0
+torch>=2.3.0
+datasets>=2.19.0
+accelerate>=0.30.0
+tqdm
