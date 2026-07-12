@@ -29,6 +29,7 @@ import sys
 
 from apps_data import load_apps, parse_tests, build_instruction
 import apps_scoring
+import train_registry
 
 # args that change trace content or pass/fail labels: a resumed run must not
 # silently mix two of these configurations in one pool
@@ -112,6 +113,9 @@ def main():
                     help="resume even if label-relevant args differ from the "
                          "original run's gen_config.json (NOT recommended)")
     args = ap.parse_args()
+    # this script implements the CODE pipeline; the active train set is
+    # selected by the `train` pointer in train_registry.py
+    train_registry.require("train_code", "gen_apps_vllm")
     os.makedirs(args.save_dir, exist_ok=True)
 
     from transformers import AutoTokenizer
@@ -133,6 +137,8 @@ def main():
                 old = json.load(f)
             diffs = [(k, old[k], getattr(args, k)) for k in LABEL_ARGS
                      if k in old and old[k] != getattr(args, k)]
+            if old.get("train_set", train_registry.TRAIN_NAME) != train_registry.TRAIN_NAME:
+                diffs.append(("train_set", old["train_set"], train_registry.TRAIN_NAME))
             if diffs and not args.force_config:
                 raise SystemExit(
                     "[gen_apps] resume refused — label-relevant args changed "
@@ -201,6 +207,7 @@ def main():
     def write_config(**extra):
         with open(os.path.join(args.save_dir, "gen_config.json"), "w") as f:
             json.dump({**vars(args),
+                       "train_set": train_registry.TRAIN_NAME,
                        "decoding": {"temperature": 0, "n": 1,
                                     "max_tokens": args.max_tokens,
                                     "remove_bos": True, "use_chat_format": True},

@@ -17,10 +17,21 @@ gpu=${1:-0}
 : "${LAYER:=20}"                 # steering layer (SEAL)
 : "${EVAL_N:=300}"               # random eval task list: total problems (difficulty random)
 : "${EVAL_SEED:=42}"             # seed for the eval task sample
-TAG=$(basename "$MODEL")
-DIR="results/APPS_train/${TAG}/baseline_${MAX_TOKENS}"
 
-echo "[1/6] vLLM generate + score APPS train (stop at ${TARGET}+${TARGET}) ..."
+# Active train set comes from the `train` pointer in extraction/train_registry.py
+# (train = train_code). Every path below depends on $TRAIN, not a literal name.
+TRAIN=$(python3 extraction/train_registry.py --name)
+if [[ "$TRAIN" != "train_code" ]]; then
+    echo "ERROR: train points at '$TRAIN' — this pipeline implements train_code." >&2
+    echo "       Flip \`train\` in extraction/train_registry.py to run it here." >&2
+    exit 1
+fi
+echo "== active train set: $TRAIN ($(python3 extraction/train_registry.py --path)) =="
+
+TAG=$(basename "$MODEL")
+DIR="results/${TRAIN}/${TAG}/baseline_${MAX_TOKENS}"
+
+echo "[1/6] vLLM generate + score ${TRAIN} (stop at ${TARGET}+${TARGET}) ..."
 CUDA_VISIBLE_DEVICES=$gpu python -u extraction/gen_apps_vllm.py \
     --model_name_or_path "$MODEL" --save_dir "$DIR" --split train \
     --max_tokens "$MAX_TOKENS" --target "$TARGET" --chunk_size "$CHUNK" \
@@ -56,7 +67,7 @@ python -u extraction/package_vector.py \
 echo "== done: vectors/apps_v_code.pt + vectors/apps_v_code.meta.json =="
 echo "   (SEAL convention: vector = H_RT - H_E; apply with coef -1.0 in the eval)"
 
-echo "[6/6] random eval task list (APPS train, random difficulty, seeded) ..."
+echo "[6/6] random eval task list (${TRAIN}, random difficulty, seeded) ..."
 # --exclude_from: generation is done, so sample only from train problems the
 # extraction never consumed (the v1 lesson: never eval on the extraction data)
 python -u extraction/make_eval_list.py \

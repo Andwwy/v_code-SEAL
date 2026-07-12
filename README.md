@@ -7,8 +7,13 @@ Design rationale and risks: [PLAN.md](PLAN.md).
 ## Pipeline (extraction/)
 
 ```
-gen_apps_vllm.py      Stage 1+2  vLLM greedy traces over APPS train in file order,
-                                 scored live by apps_scoring.py, stops at 500+500
+train_registry.py                the `train` POINTER: train = train_code selects
+                                 the active train set; all entry points resolve
+                                 through it and refuse a set they don't implement
+make_train_jsonl.py              materializes data/APPS/train_code.jsonl
+gen_apps_vllm.py      Stage 1+2  vLLM greedy traces over the active train set in
+                                 file order, scored live by apps_scoring.py,
+                                 stops at 500+500
 apps_data.py                     APPS parquet-branch loader + test filtering + prompts
 apps_scoring.py       Stage 2    stdin/stdout + call-based subprocess harness
                                  (reused at eval time for pass@1)
@@ -45,6 +50,31 @@ Interrupted generation resumes for free (`--resume` skips finished problem_ids;
 correct/incorrect prefixes are deterministic, so resuming never changes the
 selection).
 
+## Train sets and the `train` pointer (data/)
+
+SEAL's repo keeps its train data at `data/MATH/train.jsonl`. This repo carries
+both domains in that convention, renamed per set:
+
+| set | file | contents |
+|---|---|---|
+| `train_math` | `data/MATH/train_math.jsonl` | SEAL's own MATH train file (7,500 rows: problem, level, type, solution), renamed |
+| `train_code` | `data/APPS/train_code.jsonl` | APPS train split in file order (5,000 rows: problem, level + provenance; `has_tests` marks the 550 defect rows), built by `make_train_jsonl.py` |
+
+The active set is a single variable in
+[train_registry.py](extraction/train_registry.py):
+
+```python
+train = "train_code"   # POINTER — flip to "train_math" for the math set
+```
+
+No other file names a concrete set: `gen_apps_vllm.py`, `make_eval_list.py`,
+and `run_extraction.sh` all resolve the pointer (and hard-fail if it selects a
+set they don't implement — this repo's stages implement `train_code`; math
+runs go through SEAL's original boxed-answer pipeline). The active set name is
+recorded in `gen_config.json` and the eval-list meta, and a resumed run
+refuses a changed pointer. Test cases are not embedded in `train_code.jsonl`
+(~100MB); scoring reloads them from the dataset by `problem_id`.
+
 ## What "SEAL-faithful" pins down
 
 | knob | value | source |
@@ -66,8 +96,9 @@ forward passes + optional layer subsetting + logits trimming in Stage 3
 
 ## Outputs
 
-- `results/APPS_train/<model>/baseline_10000/` — traces (`math_eval.jsonl`),
+- `results/train_code/<model>/baseline_10000/` — traces (`math_eval.jsonl`),
   pools (`hidden_{correct,incorrect}_0_500/`), skips, per-pool `selection.json`
+  (the results dir is keyed by the active `train` pointer)
 - `vectors/apps_v_code.pt` + `vectors/apps_v_code.meta.json` — the vector and
   its provenance (model, layer, sign, keyword lists, split + problem ids,
   activation counts, full gen config)

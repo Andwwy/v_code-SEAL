@@ -27,6 +27,7 @@ import os
 import random
 
 from apps_data import load_apps, parse_tests
+import train_registry
 
 TIER_ORDER = ["introductory", "interview", "competition"]
 
@@ -44,6 +45,10 @@ def main():
     ap.add_argument("--out", default=None,
                     help="output path; default eval_tasks/apps_<split>_n<n>_seed<seed>[_excl].jsonl")
     args = ap.parse_args()
+    if args.split == "train":
+        # eval tasks come from the ACTIVE train set (the `train` pointer);
+        # this script implements the code set (APPS)
+        train_registry.require("train_code", "make_eval_list")
     suffix = "_excl" if args.exclude_from else ""
     out = args.out or os.path.join(
         "eval_tasks", f"apps_{args.split}_n{args.n_total}_seed{args.seed}{suffix}.jsonl")
@@ -89,6 +94,7 @@ def main():
         for r in picked:
             f.write(json.dumps(r) + "\n")
     meta = {"dataset": "codeparrot/apps (parquet branch)", "split": args.split,
+            "train_set": train_registry.TRAIN_NAME,
             "seed": args.seed, "n_total_requested": args.n_total,
             "method": ("filter problems with missing/broken tests, exclude "
                        "extraction-used problem_ids if --exclude_from given, "
