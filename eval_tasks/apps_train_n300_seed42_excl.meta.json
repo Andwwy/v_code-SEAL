@@ -1,0 +1,20 @@
+{
+  "dataset": "codeparrot/apps (parquet branch)",
+  "split": "train",
+  "train_set": "train_code",
+  "seed": 42,
+  "n_total_requested": 300,
+  "method": "filter problems with missing/broken tests, exclude extraction-used problem_ids if --exclude_from given, random.Random(seed).sample over the WHOLE remaining pool (difficulty random, not stratified), order by problem_id",
+  "n_rows": 300,
+  "difficulty_counts_realized": {
+    "introductory": 300,
+    "interview": 0,
+    "competition": 0
+  },
+  "pool_usable": 1200,
+  "n_filtered_no_tests": 550,
+  "excluded": {
+    "source": "results/train_code/DeepSeek-R1-Distill-Qwen-1.5B/baseline_10000/math_eval.jsonl",
+    "n_excluded": 3250
+  }
+}
