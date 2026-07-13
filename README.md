@@ -46,6 +46,15 @@ pip install -r requirements.txt
 bash extraction/run_extraction.sh 0            # gpu index; env vars override knobs
 ```
 
+Pod gotcha: images that preinstall vllm>=0.11 crash at `import vllm` with
+`RuntimeError: Could not load libtorchcodec` / `libnvrtc.so.13: cannot open
+shared object file` — newer vllm imports torchcodec (video support this
+pipeline never uses) at startup, and pod images lack the CUDA-13 NVRTC lib
+and FFmpeg it needs. Fix: `pip install -r requirements.txt` (pins vllm<0.11,
+which pulls its own compatible torch and skips torchcodec entirely), or keep
+the preinstalled stack and run
+`pip install nvidia-cuda-nvrtc-cu13 && apt-get update && apt-get install -y ffmpeg`.
+
 Interrupted generation resumes for free (`--resume` skips finished problem_ids;
 correct/incorrect prefixes are deterministic, so resuming never changes the
 selection).

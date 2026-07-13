@@ -1,7 +1,11 @@
-# extraction pipeline (GPU pod). Same env as SEAL v1 runs.
-vllm>=0.6.0
+# extraction pipeline (GPU pod).
+# vllm <0.11: newer vllm imports torchcodec at startup (video multimodal),
+# which needs libnvrtc from the CUDA-13 stack + FFmpeg shared libs — both
+# missing on common pod images. 0.10.x pulls a compatible torch (2.8/cu128)
+# and has no torchcodec dependency. If you must use a preinstalled vllm>=0.11:
+#   pip install nvidia-cuda-nvrtc-cu13 && apt-get install -y ffmpeg
+vllm>=0.8.0,<0.11
 transformers>=4.44.0
-torch>=2.3.0
 datasets>=2.19.0
 accelerate>=0.30.0
 tqdm
