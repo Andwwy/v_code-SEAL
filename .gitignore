@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 results/
 .DS_Store
+result/baseline_10000/math_eval.jsonl
